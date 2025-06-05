@@ -76,7 +76,8 @@ class ProfileResource extends Resource
                                     'striker' => 'Striker',
                                     'midfielder' => 'Midfielder',
                                     'defender' => 'Defender',
-                                    'goalkeeper' => 'Goalkeeper'
+                                    'goalkeeper' => 'Goalkeeper',
+                                    'forward' => 'Forward',
                                 ];
                             default:
                                 return [];

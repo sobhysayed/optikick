@@ -13,6 +13,8 @@ use Carbon\Carbon;
 use App\Services\MetricAnalysisService;
 use App\Services\AIModelService;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
+use App\Models\Notification;
 
 class DoctorController extends Controller
 {
@@ -244,63 +246,127 @@ class DoctorController extends Controller
     public function approveClassification(User $player, Request $request)
     {
         try {
-            $this->authorize('approve-classification', $player);
-
-            $request->validate([
-                'status' => 'required|string',
-                'approved' => 'required|boolean'
-            ]);
-
-            if ($request->approved) {
-                $player->update(['status' => $request->status]);
-                
-                $player->notifications()->create([
-                    'type' => 'classification_approved',
-                    'title' => 'AI Classification Approved',
-                    'body' => 'Your health classification has been approved by the doctor.'
-                ]);
+            // Direct authorization check
+            if (auth()->user()->role !== 'doctor') {
+                return $this->errorResponse('Only doctors can approve classifications', [], 403);
             }
 
-            return $this->successResponse([
-                'message' => $request->approved ? 'Classification approved' : 'Classification rejected',
-                'player' => $player->fresh()
-            ]);
-        } catch (\Exception $e) {
-            return $this->errorResponse('Failed to approve classification: ' . $e->getMessage(), [], 500);
-        }
-    }
+            if ($player->role !== 'player') {
+                return $this->errorResponse('Invalid player selected', [], 400);
+            }
 
-    public function approveAIProgram(TrainingProgram $program, Request $request)
-    {
-        try {
-            $this->authorize('approve-program', $program);
-                
             $request->validate([
                 'approved' => 'required|boolean'
             ]);
 
+            // Get the latest training program for this player
+            $program = $player->trainingPrograms()
+                ->where('status', 'pending')
+                ->latest()
+                ->first();
+
+            if (!$program) {
+                return $this->errorResponse('No pending training program found for this player', [], 404);
+            }
+
             if ($request->approved) {
+                DB::beginTransaction();
+                try {
+                    // Update program status
+                    $program->update([
+                        'status' => 'approved',
+                        'approved_at' => now()
+                    ]);
+
+                    // Create notification for the player
+                    $player->notifications()->create([
+                        'type' => 'training_program',
+                        'title' => 'Training Program Approved',
+                        'body' => 'Your training program and health classification have been approved by the doctor.',
+                        'sender_id' => auth()->id(),
+                        'related_program_id' => $program->id
+                    ]);
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    throw $e;
+                }
+            } else {
+                // If rejected, update program status
                 $program->update([
-                    'status' => 'approved',
+                    'status' => 'rejected',
                     'approved_at' => now()
                 ]);
 
-                $program->player->notifications()->create([
-                    'type' => 'program_approved',
-                    'title' => 'Training Program Approved',
-                    'body' => 'Your AI-generated training program has been approved by the doctor.',
+                // Create notification for the player
+                $player->notifications()->create([
+                    'type' => 'training_program',
+                    'title' => 'Training Program Rejected',
+                    'body' => 'Your training program and health classification have been rejected by the doctor.',
+                    'sender_id' => auth()->id(),
                     'related_program_id' => $program->id
                 ]);
-            } else {
-                $program->delete();
             }
 
             return $this->successResponse([
-                'message' => $request->approved ? 'Program approved successfully' : 'Program rejected',
-                'program' => $request->approved ? $program->fresh() : null
+                'message' => $request->approved ? 'Training program and classification approved' : 'Training program and classification rejected',
+                'player' => $player->fresh(),
+                'program' => $program->fresh()
             ]);
         } catch (\Exception $e) {
-            return $this->errorResponse('Failed to approve program: ' . $e->getMessage(), [], 500);
+            return $this->errorResponse('Failed to process approval: ' . $e->getMessage(), [], 500);
+        }
+    }
+
+    public function approveAIProgram(TrainingProgram $program)
+    {
+        if (auth()->user()->role !== 'doctor') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized. Only doctors can approve programs.',
+                'data' => []
+            ], 403);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Update program status
+            $program->update([
+                'status' => 'approved',
+                'approved_at' => now()
+            ]);
+
+            // Send notification to the player
+            Notification::create([
+                'type' => 'training_program',
+                'title' => 'Training Program Approved',
+                'body' => 'Your AI-generated training program has been approved by the doctor.',
+                'sender_id' => auth()->id(),
+                'related_program_id' => $program->id,
+                'user_id' => $program->player_id,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Program approved successfully',
+                'data' => [
+                    'program' => $program->fresh()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to approve program: ' . $e->getMessage(),
+                'data' => []
+            ], 500);
         }
     }
 }

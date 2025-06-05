@@ -55,11 +55,10 @@ Route::middleware(['auth:sanctum', 'role:doctor'])->prefix('doctor')->group(func
 
     Route::post('players/{player}/ai-program', [DoctorController::class, 'generateAIProgram']);
     Route::post('programs/{program}/approve', [DoctorController::class, 'approveAIProgram']);
+    Route::post('players/{player}/classification/approve', [DoctorController::class, 'approveClassification']);
 
     Route::get('assessments', [DoctorController::class, 'getAssessmentRequests']);
     Route::post('assessments/{assessment}/respond', [DoctorController::class, 'respondToAssessment']);
-
-    
 });
 
 // Notification Routes (for all authenticated users)
