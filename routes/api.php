@@ -9,6 +9,12 @@ use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\MessageController;
 use App\Http\Controllers\API\AdminController;
 
+Route::get('/test', function () {
+    return response()->json([
+        'message' => 'It works! 🎉',
+    ]);
+});
+
 
 // Auth Routes with specific rate limiting
 Route::middleware(['throttle:6,1'])->group(function () { // 6 attempts per minute
