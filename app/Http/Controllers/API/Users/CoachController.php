@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Services\MetricAnalysisService;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Http\JsonResponse;
 
 class CoachController extends BaseController
 {
@@ -21,9 +22,7 @@ class CoachController extends BaseController
     }
 
 
-
-
-    public function getDashboard()
+    public function getDashboard(): JsonResponse
     {
         try {
             $coach = auth()->user();
@@ -68,7 +67,7 @@ class CoachController extends BaseController
         }
     }
 
-    public function getProfile()
+    public function getProfile(): JsonResponse
     {
         try {
             $coach = auth()->user()->load('profile');
@@ -89,7 +88,7 @@ class CoachController extends BaseController
     }
 
 
-    public function getTeamOverview()
+    public function listAllPlayers(): JsonResponse
     {
         $coach = auth()->user();
         $players = User::where('role', 'player')
@@ -109,41 +108,19 @@ class CoachController extends BaseController
     }
 
 
-    public function getPlayerProgram(User $player)
-{
-    try {
-        if ($player->role !== 'player') {
-            return $this->errorResponse('Invalid player selected', [], 400);
-        }
+    public function getPlayerProgram(User $player): JsonResponse
+    {
+        try {
+            if ($player->role !== 'player') {
+                return $this->errorResponse('Invalid player selected', [], 400);
+            }
 
-        $latestProgram = TrainingProgram::where('player_id', $player->id)
-            ->latest()
-            ->first();
-
-        // No training program at all
-        if (!$latestProgram) {
-            return $this->successResponse([
-                'player' => [
-                    'id' => $player->id,
-                    'name' => $player->name,
-                    'status' => $player->status
-                ],
-                'program' => null
-            ], 'No training program found');
-        }
-
-        // Use latest if it's approved
-        if ($latestProgram->status === 'approved') {
-            $program = $latestProgram;
-        } else {
-            // Fallback to last approved one
-            $program = TrainingProgram::where('player_id', $player->id)
-                ->where('status', 'approved')
-                ->where('id', '<>', $latestProgram->id)
+            $latestProgram = TrainingProgram::where('player_id', $player->id)
                 ->latest()
                 ->first();
 
-            if (!$program) {
+            // No training program at all
+            if (!$latestProgram) {
                 return $this->successResponse([
                     'player' => [
                         'id' => $player->id,
@@ -151,35 +128,57 @@ class CoachController extends BaseController
                         'status' => $player->status
                     ],
                     'program' => null
-                ], 'No approved training program available');
+                ], 'No training program found');
             }
+
+            // Use latest if it's approved
+            if ($latestProgram->status === 'approved') {
+                $program = $latestProgram;
+            } else {
+                // Fallback to last approved one
+                $program = TrainingProgram::where('player_id', $player->id)
+                    ->where('status', 'approved')
+                    ->where('id', '<>', $latestProgram->id)
+                    ->latest()
+                    ->first();
+
+                if (!$program) {
+                    return $this->successResponse([
+                        'player' => [
+                            'id' => $player->id,
+                            'name' => $player->name,
+                            'status' => $player->status
+                        ],
+                        'program' => null
+                    ], 'No approved training program available');
+                }
+            }
+
+            $exerciseList = $program->exercises['program'] ?? [];
+
+            return $this->successResponse([
+                'player' => [
+                    'id' => $player->id,
+                    'name' => $player->name,
+                    'status' => $player->status
+                ],
+                'program' => [
+                    'id' => $program->id,
+                    'focus_area' => $program->focus_area,
+                    'exercises' => $exerciseList,
+                    'status' => $program->status,
+                    'created_at' => $program->created_at
+                ]
+            ], 'Training program fetched successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to fetch player program: ' . $e->getMessage());
+            return $this->errorResponse('Failed to fetch player program', [], 500);
         }
-
-        $exerciseList = $program->exercises['program'] ?? [];
-
-        return $this->successResponse([
-            'player' => [
-                'id' => $player->id,
-                'name' => $player->name,
-                'status' => $player->status
-            ],
-            'program' => [
-                'id' => $program->id,
-                'focus_area' => $program->focus_area,
-                'exercises' => $exerciseList,
-                'status' => $program->status,
-                'created_at' => $program->created_at
-            ]
-        ], 'Training program fetched successfully');
-
-    } catch (\Exception $e) {
-        \Log::error('Failed to fetch player program: ' . $e->getMessage());
-        return $this->errorResponse('Failed to fetch player program', [], 500);
     }
-}
 
 
-    public function getPlayerMetrics(User $player)
+    public function getPlayerMetrics(User $player): JsonResponse
     {
         try {
             if ($player->role !== 'player') {
@@ -248,7 +247,7 @@ class CoachController extends BaseController
         }
     }
 
-    public function getPlayerMetricDetail(Request $request, User $player, string $metricType)
+    public function getPlayerMetricDetail(Request $request, User $player, string $metricType): JsonResponse
     {
         try {
             if ($player->role !== 'player') {

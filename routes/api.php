@@ -9,13 +9,6 @@ use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\MessageController;
 use App\Http\Controllers\API\AdminController;
 
-Route::get('/test', function () {
-    return response()->json([
-        'message' => 'It works! 🎉',
-    ]);
-});
-
-
 // Auth Routes with specific rate limiting
 Route::middleware(['throttle:6,1'])->group(function () { // 6 attempts per minute
     Route::post('login', [AuthController::class, 'login'])->name('login');
@@ -37,7 +30,7 @@ Route::middleware(['auth:sanctum', 'role:player'])->group(function () {
 Route::middleware(['auth:sanctum', 'role:coach'])->prefix('coach')->group(function () {
     Route::get('dashboard', [CoachController::class, 'getDashboard']);
     Route::get('/profile', [CoachController::class, 'getProfile']);
-    Route::get('team/overview', [CoachController::class, 'getTeamOverview']);
+    Route::get('list-all-players', [CoachController::class, 'listAllPlayers']);
     Route::get('players/{player}/program', [CoachController::class, 'getPlayerProgram']);
     Route::get('players/{player}/metrics', [CoachController::class, 'getPlayerMetrics']);
     Route::get('players/{player}/metrics/{metricType}', [CoachController::class, 'getPlayerMetricDetail']);
@@ -47,17 +40,19 @@ Route::middleware(['auth:sanctum', 'role:coach'])->prefix('coach')->group(functi
 Route::middleware(['auth:sanctum', 'role:doctor'])->prefix('doctor')->group(function () {
     Route::get('dashboard', [DoctorController::class, 'getDashboard']);
     Route::get('profile', [DoctorController::class, 'getProfile']);
-    Route::get('players/{player}/program', [DoctorController::class, 'getPlayerProgram']);
-    Route::get('players/{player}/metrics/{metricType}', [DoctorController::class, 'getPlayerMetricDetail']);
+    Route::get('list-all-players', [DoctorController::class, 'listAllPlayers']);
     Route::get('players/{player}/metrics', [DoctorController::class, 'getPlayerMetrics']);
-    Route::get('team/overview', [DoctorController::class, 'getTeamOverview']);
-
-    Route::post('players/{player}/ai-program', [DoctorController::class, 'generateAIProgram']);
-    Route::post('programs/{program}/approve', [DoctorController::class, 'approveAIProgram']);
-    Route::post('players/{player}/classification/approve', [DoctorController::class, 'approveClassification']);
+    Route::get('players/{player}/metrics/{metricType}', [DoctorController::class, 'getPlayerMetricDetail']);
+    Route::get('players/{player}/program', [DoctorController::class, 'getPlayerProgram']);
+    Route::put('players/{player}/program/edit', [DoctorController::class, 'editPlayerTrainingProgram']);
     Route::get('assessments', [DoctorController::class, 'getAssessmentRequests']);
     Route::post('assessments/{assessment}/approve', [DoctorController::class, 'approveAssessment']);
     Route::post('assessments/{assessment}/reschedule', [DoctorController::class, 'rescheduleAssessment']);
+
+    // Need to review
+    Route::post('players/{player}/ai-program', [DoctorController::class, 'generateAIProgram']);
+    Route::post('programs/{program}/approve', [DoctorController::class, 'approveAIProgram']);
+    Route::post('players/{player}/classification/approve', [DoctorController::class, 'approveClassification']);
 });
 
 // Notification Routes (for all authenticated users)

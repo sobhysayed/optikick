@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\TrainingProgram;
 use App\Models\AssessmentRequest;
 use App\Models\PlayerMetric;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Services\MetricAnalysisService;
@@ -27,7 +28,7 @@ class DoctorController extends Controller
         $this->metricAnalysisService = $metricAnalysisService;
     }
 
-    protected function successResponse($data, $message = 'Operation successful', $code = 200)
+    protected function successResponse($data, $message = 'Operation successful', $code = 200): JsonResponse
     {
         return response()->json([
             'status' => 'success',
@@ -36,7 +37,7 @@ class DoctorController extends Controller
         ], $code);
     }
 
-    protected function errorResponse($message, $data = [], $code = 400)
+    protected function errorResponse($message, $data = [], $code = 400): JsonResponse
     {
         return response()->json([
             'status' => 'error',
@@ -45,12 +46,11 @@ class DoctorController extends Controller
         ], $code);
     }
 
-    public function getDashboard()
+    public function getDashboard(): JsonResponse
     {
         try {
             $doctor = auth()->user();
 
-            // Get players and their statuses directly from users table
             $players = User::where('role', 'player')
                 ->select('id', 'status')
                 ->get();
@@ -90,7 +90,7 @@ class DoctorController extends Controller
         }
     }
 
-    public function getProfile()
+    public function getProfile(): JsonResponse
     {
         try {
             $doctor = auth()->user()->load('profile');
@@ -110,7 +110,7 @@ class DoctorController extends Controller
         }
     }
 
-    public function getPlayerMetrics(User $player)
+    public function getPlayerMetrics(User $player): JsonResponse
     {
         try {
             if ($player->role !== 'player') {
@@ -179,7 +179,7 @@ class DoctorController extends Controller
         }
     }
 
-    public function getPlayerMetricDetail(Request $request, User $player, string $metricType)
+    public function getPlayerMetricDetail(Request $request, User $player, string $metricType): JsonResponse
     {
         try {
             if ($player->role !== 'player') {
@@ -230,9 +230,9 @@ class DoctorController extends Controller
         }
     }
 
-    public function getTeamOverview()
+    public function listAllPlayers(): JsonResponse
     {
-        $coach = auth()->user();
+        $doctor = auth()->user();
         $players = User::where('role', 'player')
             ->with('profile')
             ->select('id', 'status', 'name')
@@ -249,47 +249,24 @@ class DoctorController extends Controller
         return response()->json($players);
     }
 
-        public function getPlayerProgram(User $player)
-    {
-        // Only doctors can access this
-        if (auth()->user()->role !== 'doctor') {
-            return $this->errorResponse('Only doctors can view player training programs', [], 403);
-        }
-
-        try {
-            if ($player->role !== 'player') {
-                return $this->errorResponse('Invalid player selected', [], 400);
+        public function getPlayerProgram(User $player): JsonResponse
+        {
+            if (auth()->user()->role !== 'doctor') {
+                return $this->errorResponse('Only doctors can view player training programs', [], 403);
             }
 
-            // Get the latest program (approved or not)
-            $latestProgram = TrainingProgram::where('player_id', $player->id)
-                ->latest()
-                ->first();
+            try {
+                if ($player->role !== 'player') {
+                    return $this->errorResponse('Invalid player selected', [], 400);
+                }
 
-            // No program at all
-            if (!$latestProgram) {
-                return $this->successResponse([
-                    'player' => [
-                        'id' => $player->id,
-                        'name' => $player->name,
-                        'status' => $player->status
-                    ],
-                    'program' => null
-                ], 'No training program found');
-            }
-
-            // Use approved if latest is approved, otherwise try fallback
-            if ($latestProgram->status === 'approved') {
-                $program = $latestProgram;
-            } else {
-                // Fallback: get previous approved program
-                $program = TrainingProgram::where('player_id', $player->id)
-                    ->where('status', 'approved')
-                    ->where('id', '<>', $latestProgram->id)
+                // Get the latest program (approved or not)
+                $latestProgram = TrainingProgram::where('player_id', $player->id)
                     ->latest()
                     ->first();
 
-                if (!$program) {
+                // No program at all
+                if (!$latestProgram) {
                     return $this->successResponse([
                         'player' => [
                             'id' => $player->id,
@@ -297,34 +274,94 @@ class DoctorController extends Controller
                             'status' => $player->status
                         ],
                         'program' => null
-                    ], 'No approved training program available');
+                    ], 'No training program found');
                 }
+
+                // Use approved if latest is approved, otherwise try fallback
+                if ($latestProgram->status === 'approved') {
+                    $program = $latestProgram;
+                } else {
+                    // Fallback: get previous approved program
+                    $program = TrainingProgram::where('player_id', $player->id)
+                        ->where('status', 'approved')
+                        ->where('id', '<>', $latestProgram->id)
+                        ->latest()
+                        ->first();
+
+                    if (!$program) {
+                        return $this->successResponse([
+                            'player' => [
+                                'id' => $player->id,
+                                'name' => $player->name,
+                                'status' => $player->status
+                            ],
+                            'program' => null
+                        ], 'No approved training program available');
+                    }
+                }
+
+                $exerciseList = $program->exercises['program'] ?? [];
+
+                return $this->successResponse([
+                    'player' => [
+                        'id' => $player->id,
+                        'name' => $player->name,
+                        'status' => $player->status
+                    ],
+                    'program' => [
+                        'id' => $program->id,
+                        'focus_area' => $program->focus_area,
+                        'exercises' => $exerciseList,
+                        'status' => $program->status,
+                        'created_at' => $program->created_at
+                    ]
+                ], 'Training program fetched successfully');
+            } catch (\Exception $e) {
+                \Log::error('Failed to fetch player program: ' . $e->getMessage());
+                return $this->errorResponse('Failed to fetch player program', [], 500);
             }
-
-            $exerciseList = $program->exercises['program'] ?? [];
-
-            return $this->successResponse([
-                'player' => [
-                    'id' => $player->id,
-                    'name' => $player->name,
-                    'status' => $player->status
-                ],
-                'program' => [
-                    'id' => $program->id,
-                    'focus_area' => $program->focus_area,
-                    'exercises' => $exerciseList,
-                    'status' => $program->status,
-                    'created_at' => $program->created_at
-                ]
-            ], 'Training program fetched successfully');
-        } catch (\Exception $e) {
-            \Log::error('Failed to fetch player program: ' . $e->getMessage());
-            return $this->errorResponse('Failed to fetch player program', [], 500);
         }
+
+    public function editPlayerTrainingProgram(Request $request, User $player): JsonResponse
+    {
+        if (auth()->user()->role !== 'doctor') {
+            return $this->errorResponse('Only doctors can edit training programs', [], 403);
+        }
+
+        if ($player->role !== 'player') {
+            return $this->errorResponse('Invalid player selected', [], 400);
+        }
+
+        // Get the latest training program for the player
+        $program = TrainingProgram::where('player_id', $player->id)->latest()->first();
+
+        if (!$program) {
+            return $this->errorResponse('No training program found for this player', [], 404);
+        }
+
+        $validated = $request->validate([
+            'focus_area' => 'sometimes|string|max:255',
+            'exercises' => 'sometimes|array',
+            'exercises.*' => 'string',
+            'status' => 'sometimes|in:pending,approved,rejected,active,completed',
+        ]);
+
+        $program->update($validated);
+
+        $player->notifications()->create([
+            'type' => 'training_program',
+            'title' => 'Training Program Updated',
+            'body' => 'Your training program has been updated by the doctor.',
+            'sender_id' => auth()->id(),
+            'related_program_id' => $program->id
+        ]);
+
+        return $this->successResponse($program->fresh(), 'Training program updated successfully');
     }
 
 
-    public function getAssessmentRequests()
+
+    public function getAssessmentRequests(): JsonResponse
     {
         try {
             $requests = auth()->user()->assignedAssessments()
@@ -338,57 +375,57 @@ class DoctorController extends Controller
         }
     }
 
-        public function approveAssessment(AssessmentRequest $assessment)
-        {
-            try {
-                $doctor = auth()->user();
+    public function approveAssessment(AssessmentRequest $assessment): JsonResponse
+    {
+        try {
+            $doctor = auth()->user();
 
-                // Ensure assessment is still pending
-                if ($assessment->status !== 'pending') {
-                    return $this->errorResponse('This assessment cannot be approved.', [], 400);
-                }
-
-                // Check for double-booking: doctor has another approved assessment at the same time
-                $conflict = AssessmentRequest::where('doctor_id', $doctor->id)
-                    ->where('requested_at', $assessment->requested_at)
-                    ->where('id', '!=', $assessment->id)
-                    ->where('status', 'approved')
-                    ->exists();
-                if ($conflict) {
-                    return $this->errorResponse('You already have another assessment at this time.', [], 409);
-                }
-
-                $assessment->update([
-                    'status' => 'approved',
-                    'approved_at' => now(),
-                    'approved_by' => $doctor->id
-                ]);
-
-                try {
-                    $assessment->player->notifications()->create([
-                        'type' => 'assessment',
-                        'title' => 'Assessment Request Approved',
-                        'body' => 'Your assessment request has been approved.',
-                        'sender_id' => $doctor->id,
-                        'related_assessment_id' => $assessment->id
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::error('Failed to notify player about assessment approval: ' . $e->getMessage());
-                }
-
-                return $this->successResponse(
-                    $assessment->load(['player.profile']),
-                    'Assessment approved successfully'
-                );
-
-            } catch (\Exception $e) {
-                \Log::error('Assessment approval failed: ' . $e->getMessage());
-                return $this->errorResponse('Failed to approve assessment', [], 500);
+            // Ensure assessment is still pending
+            if ($assessment->status !== 'pending') {
+                return $this->errorResponse('This assessment cannot be approved.', [], 400);
             }
+
+            // Check for double-booking: doctor has another approved assessment at the same time
+            $conflict = AssessmentRequest::where('doctor_id', $doctor->id)
+                ->where('requested_at', $assessment->requested_at)
+                ->where('id', '!=', $assessment->id)
+                ->where('status', 'approved')
+                ->exists();
+            if ($conflict) {
+                return $this->errorResponse('You already have another assessment at this time.', [], 409);
+            }
+
+            $assessment->update([
+                'status' => 'approved',
+                'approved_at' => now(),
+                'approved_by' => $doctor->id
+            ]);
+
+            try {
+                $assessment->player->notifications()->create([
+                    'type' => 'assessment',
+                    'title' => 'Assessment Request Approved',
+                    'body' => 'Your assessment request has been approved.',
+                    'sender_id' => $doctor->id,
+                    'related_assessment_id' => $assessment->id
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('Failed to notify player about assessment approval: ' . $e->getMessage());
+            }
+
+            return $this->successResponse(
+                $assessment->load(['player.profile']),
+                'Assessment approved successfully'
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('Assessment approval failed: ' . $e->getMessage());
+            return $this->errorResponse('Failed to approve assessment', [], 500);
+        }
     }
 
 
-    public function rescheduleAssessment(Request $request, AssessmentRequest $assessment)
+    public function rescheduleAssessment(Request $request, AssessmentRequest $assessment): JsonResponse
     {
         try {
             $request->validate([
