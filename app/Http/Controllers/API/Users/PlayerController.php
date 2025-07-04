@@ -143,6 +143,31 @@ class PlayerController extends BaseController
 
     public function requestAssessment(AssessmentRequest $request): JsonResponse
     {
+        // 1. Check if doctor is available at requested time
+        $doctorHasConflict = Assessment::where('doctor_id', $doctor->id)
+            ->where('requested_at', $requestedAt)
+            ->exists();
+
+        if ($doctorHasConflict) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'The doctor is not available at this time. Please choose another time.',
+                'data' => []
+            ], 409);
+        }
+
+        // 2. Check if player already has an assessment at this time
+        $playerHasConflict = Assessment::where('player_id', auth()->id())
+            ->where('requested_at', $requestedAt)
+            ->exists();
+
+        if ($playerHasConflict) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You already have an assessment scheduled at this time.',
+                'data' => []
+            ], 409);
+        }
         try {
             // Find available doctor first
             $doctor = User::where('role', 'doctor')->first();
