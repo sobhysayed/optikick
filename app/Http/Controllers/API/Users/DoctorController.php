@@ -339,51 +339,83 @@ class DoctorController extends Controller
     }
 
         public function approveAssessment(AssessmentRequest $assessment)
-    {
-        try {
-
-            $doctor = auth()->user();
-
-            $assessment->update([
-                'status' => 'approved',
-                'approved_at' => now(),
-                'approved_by' => $doctor->id
-            ]);
-
+        {
             try {
-                $assessment->player->notifications()->create([
-                    'type' => 'assessment',
-                    'title' => 'Assessment Request Approved',
-                    'body' => 'Your assessment request has been approved.',
-                    'sender_id' => $doctor->id,
-                    'related_assessment_id' => $assessment->id
+                $doctor = auth()->user();
+
+                // Ensure assessment is still pending
+                if ($assessment->status !== 'pending') {
+                    return $this->errorResponse('This assessment cannot be approved.', [], 400);
+                }
+
+                // Check for double-booking: doctor has another approved assessment at the same time
+                $conflict = AssessmentRequest::where('doctor_id', $doctor->id)
+                    ->where('requested_at', $assessment->requested_at)
+                    ->where('id', '!=', $assessment->id)
+                    ->where('status', 'approved')
+                    ->exists();
+                if ($conflict) {
+                    return $this->errorResponse('You already have another assessment at this time.', [], 409);
+                }
+
+                $assessment->update([
+                    'status' => 'approved',
+                    'approved_at' => now(),
+                    'approved_by' => $doctor->id
                 ]);
+
+                try {
+                    $assessment->player->notifications()->create([
+                        'type' => 'assessment',
+                        'title' => 'Assessment Request Approved',
+                        'body' => 'Your assessment request has been approved.',
+                        'sender_id' => $doctor->id,
+                        'related_assessment_id' => $assessment->id
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::error('Failed to notify player about assessment approval: ' . $e->getMessage());
+                }
+
+                return $this->successResponse(
+                    $assessment->load(['player.profile']),
+                    'Assessment approved successfully'
+                );
+
             } catch (\Exception $e) {
-                \Log::error('Failed to notify player about assessment approval: ' . $e->getMessage());
+                \Log::error('Assessment approval failed: ' . $e->getMessage());
+                return $this->errorResponse('Failed to approve assessment', [], 500);
             }
-
-            return $this->successResponse(
-                $assessment->load(['player.profile']),
-                'Assessment approved successfully'
-            );
-
-        } catch (\Exception $e) {
-            \Log::error('Assessment approval failed: ' . $e->getMessage());
-            return $this->errorResponse('Failed to approve assessment', [], 500);
-        }
     }
 
 
     public function rescheduleAssessment(Request $request, AssessmentRequest $assessment)
     {
         try {
-
             $request->validate([
                 'new_date' => 'required|date',
                 'new_time' => 'required|date_format:H:i'
             ]);
 
             $newDateTime = Carbon::parse($request->new_date . ' ' . $request->new_time);
+
+            // Check for double-booking: doctor has another assessment at the new time
+            $doctorConflict = AssessmentRequest::where('doctor_id', $assessment->doctor_id)
+                ->where('requested_at', $newDateTime)
+                ->where('id', '!=', $assessment->id)
+                ->where('status', 'approved')
+                ->exists();
+            if ($doctorConflict) {
+                return $this->errorResponse('The doctor is not available at this time. Please choose another time.', [], 409);
+            }
+
+            // Check for player conflict: player has another assessment at the new time
+            $playerConflict = AssessmentRequest::where('player_id', $assessment->player_id)
+                ->where('requested_at', $newDateTime)
+                ->where('id', '!=', $assessment->id)
+                ->exists();
+            if ($playerConflict) {
+                return $this->errorResponse('The player already has an assessment at this time.', [], 409);
+            }
 
             $assessment->update([
                 'requested_at' => $newDateTime,
