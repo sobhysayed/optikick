@@ -128,7 +128,7 @@ class User extends Authenticatable
     protected static function boot()
     {
         parent::boot();
-        
+
         static::deleting(function($user) {
             // Delete only from existing tables
             if (Schema::hasTable('profiles')) {
@@ -169,7 +169,7 @@ class User extends Authenticatable
             'requested_at' => now()
         ]);
     }
-    
+
     // Add this method to your User model
     public function teams()
     {
@@ -180,7 +180,7 @@ class User extends Authenticatable
         'player' => 'Player',
         'coach' => 'Coach',
         'doctor' => 'Doctor',
-        'admin' => 'Admin'  // Add this line
+        'admin' => 'Admin'
     ];
 
     public function players()
@@ -197,7 +197,7 @@ public function notifyCoach($title, $body, $type, $metadata = [])
 {
     // Find the coach
     $coach = User::where('role', 'coach')->first();
-    
+
     if ($coach) {
         return Notification::create([
             'user_id' => $coach->id,

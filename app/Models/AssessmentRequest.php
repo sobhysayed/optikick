@@ -32,7 +32,7 @@ class AssessmentRequest extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
         static::created(function ($assessment) {
             $player = $assessment->player;
             $player->notifyCoach(
@@ -41,18 +41,6 @@ class AssessmentRequest extends Model
                 'assessment',
                 ['assessment_id' => $assessment->id]
             );
-        });
-    
-        static::updated(function ($assessment) {
-            if ($assessment->isDirty('status')) {
-                $player = $assessment->player;
-                $player->notifyCoach(
-                    'Assessment Status Update',
-                    "Assessment for {$player->name} has been {$assessment->status}",
-                    'assessment',
-                    ['assessment_id' => $assessment->id]
-                );
-            }
         });
     }
 }

@@ -46,6 +46,7 @@ Route::middleware(['auth:sanctum', 'role:doctor'])->prefix('doctor')->group(func
     Route::get('players/{player}/program', [DoctorController::class, 'getPlayerProgram']);
     Route::put('players/{player}/program/edit', [DoctorController::class, 'editPlayerTrainingProgram']);
     Route::get('assessments', [DoctorController::class, 'getAssessmentRequests']);
+    Route::get('assessments/{assessment}', [DoctorController::class, 'showAssessmentRequest']);
     Route::post('assessments/{assessment}/approve', [DoctorController::class, 'approveAssessment']);
     Route::post('assessments/{assessment}/reschedule', [DoctorController::class, 'rescheduleAssessment']);
 
