@@ -1,11 +1,12 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\Conversation;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -27,55 +28,83 @@ class MessageController extends Controller
     private const MAX_PHOTO_SIZE = 10240; // 10MB
     private const MAX_VOICE_SIZE = 5120;  // 5MB
 
-    public function getConversations(Request $request)
+    public function getConversations(Request $request): JsonResponse
     {
-        $query = $request->input('query');
         $userId = auth()->id();
 
-        $conversations = Conversation::where(function($q) use ($userId) {
-                $q->where('user_id', $userId)
-                  ->orWhere('participant_id', $userId);
-            })
-            ->with(['lastMessage', 'user.profile', 'participant.profile'])
-            ->when($query, function($q) use ($query) {
-                return $q->whereHas('participant', function($q) use ($query) {
-                    $q->where('name', 'like', "%{$query}%")
-                      ->orWhere('username', 'like', "%{$query}%");
-                });
-            })
-            ->latest('last_message_at')
+        $conversations = $this->buildConversationQuery($request, $userId)
             ->get()
-            ->map(function($conversation) use ($userId) {
-                // Determine the other participant
-                $otherUser = $conversation->user_id === $userId
-                    ? $conversation->participant
-                    : $conversation->user;
-
-                return [
-                    'id' => $conversation->id,
-                    'participant' => [
-                        'id' => $otherUser->id,
-                        'name' => $otherUser->name,
-                        'username' => '@' . strstr($otherUser->email, '@', true),
-                        'avatar' => $otherUser->profile->avatar_url
-                    ],
-                    'last_message' => $conversation->lastMessage ? [
-                        'id' => $conversation->lastMessage->id,
-                        'type' => $conversation->lastMessage->type,
-                        'content' => $this->getMessagePreview($conversation->lastMessage),
-                        'created_at' => $this->formatMessageTime($conversation->lastMessage->created_at),
-                        'is_read' => $conversation->lastMessage->read_at !== null,
-                        'reaction' => $conversation->lastMessage->reaction
-                    ] : null,
-                    'unread_count' => $conversation->messages()
-                        ->where('recipient_id', $userId)
-                        ->whereNull('read_at')
-                        ->count()
-                ];
-            });
+            ->map(fn($conversation) => $this->formatConversation($conversation, $userId));
 
         return response()->json($conversations);
     }
+
+    private function buildConversationQuery(Request $request, int $userId)
+    {
+        $query = $request->input('query');
+
+        return Conversation::where(function ($q) use ($userId) {
+            $q->where('user_id', $userId)
+                ->orWhere('participant_id', $userId);
+        })
+            ->with(['lastMessage', 'user.profile', 'participant.profile'])
+            ->when($query, function ($q) use ($query, $userId) {
+                $queryString = ltrim($query);
+                $isUsername = str_starts_with($queryString, '@');
+                $queryValue = $isUsername ? substr($queryString, 1) : $queryString;
+
+                return $q->where(function ($subQ) use ($isUsername, $queryValue, $userId) {
+                    $relationFilter = fn($relation) =>
+                    $relation->where('id', '!=', $userId)
+                        ->where(function ($q) use ($isUsername, $queryValue) {
+                            if ($isUsername) {
+                                $q->where('email', 'like', "{$queryValue}@%");
+                            } else {
+                                $q->where('name', 'like', "%{$queryValue}%")
+                                    ->orWhere('email', 'like', "%{$queryValue}%");
+                            }
+                        });
+
+                    $subQ->whereHas('user', $relationFilter)
+                        ->orWhereHas('participant', $relationFilter);
+                });
+            })
+            ->latest('last_message_at');
+    }
+
+    private function formatConversation($conversation, int $userId): array
+    {
+        $otherUser = $this->getOtherParticipant($conversation, $userId);
+
+        return [
+            'id' => $conversation->id,
+            'participant' => [
+                'id' => $otherUser->id,
+                'name' => $otherUser->name,
+                'username' => '@' . strstr($otherUser->email, '@', true),
+                'avatar' => optional($otherUser->profile)->avatar_url,
+            ],
+            'last_message' => $conversation->lastMessage ? [
+                'id' => $conversation->lastMessage->id,
+                'type' => $conversation->lastMessage->type,
+                'content' => $this->getMessagePreview($conversation->lastMessage),
+                'created_at' => optional($conversation->lastMessage->created_at)?->diffForHumans(),
+                'is_read' => !is_null($conversation->lastMessage->read_at),
+            ] : null,
+            'unread_count' => $conversation->messages()
+                ->where('recipient_id', $userId)
+                ->whereNull('read_at')
+                ->count(),
+        ];
+    }
+
+    private function getOtherParticipant($conversation, int $userId)
+    {
+        return $conversation->user_id === $userId
+            ? $conversation->participant
+            : $conversation->user;
+    }
+
 
     public function getMessages(User $user)
     {
@@ -126,23 +155,6 @@ class MessageController extends Controller
         return response()->json($messages);
     }
 
-    // Add search messages endpoint
-    public function searchMessages(Request $request)
-    {
-        $query = $request->input('query');
-
-        $messages = Message::where(function($q) {
-                $q->where('sender_id', auth()->id())
-                  ->orWhere('recipient_id', auth()->id());
-            })
-            ->where('content', 'LIKE', "%{$query}%")
-            ->with(['sender.profile'])
-            ->latest()
-            ->paginate(20);
-
-        return response()->json($messages);
-    }
-
     private function findOrCreateConversation(User $participant)
     {
         // Ensure we have a valid authenticated user
@@ -151,9 +163,10 @@ class MessageController extends Controller
         }
 
         // Ensure participant exists and is different from authenticated user
-        if (!$participant->exists || $userId === $participant->id) {
-            throw new \Exception('Invalid participant');
+        if ($userId === $participant->id) {
+            throw new \Exception('You cannot start a conversation with yourself.');
         }
+
 
         // Try to find existing conversation
         $conversation = Conversation::where(function($q) use ($userId, $participant) {
@@ -182,14 +195,48 @@ class MessageController extends Controller
         return $conversation;
     }
 
-    public function sendMessage(Request $request, User $recipient)
+    public function searchUsers(Request $request): JsonResponse
     {
+        $query = $request->input('query');
+        $authId = auth()->id();
+
+        $users = User::where('id', '!=', $authId)
+            ->where('role', '!=', 'admin')
+            ->where(function ($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                    ->orWhere('email', 'like', "%{$query}%");
+            })
+            ->with('profile')
+            ->take(10)
+            ->get()
+            ->map(fn($user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'username' => '@' . strstr($user->email, '@', true),
+                'avatar' => optional($user->profile)->avatar_url,
+            ]);
+
+        return response()->json($users);
+    }
+
+    public function sendMessage(Request $request, $recipientId)
+    {
+        $participant = User::find($recipientId);
+
+        if (!$participant) {
+            return response()->json(['message' => 'Recipient not found'], 404);
+        }
+
+        if ($participant->id === auth()->id()) {
+            return response()->json(['message' => 'You cannot message yourself'], 400);
+        }
+
         $this->validateMessageRequest($request);
-        $conversation = $this->findOrCreateConversation($recipient);
+        $conversation = $this->findOrCreateConversation($participant);
 
         $message = new Message([
             'sender_id' => auth()->id(),
-            'recipient_id' => $recipient->id,
+            'recipient_id' => $participant->id,
             'type' => $request->type,
             'content' => $request->type === 'text' ? $request->input('content') : null,
             'file_url' => $request->hasFile('file') ? $this->uploadFile($request->file('file'), $request->type) : null
@@ -203,7 +250,7 @@ class MessageController extends Controller
         ]);
 
         // Create notification for recipient
-        $recipient->notifications()->create([
+        $participant->notifications()->create([
             'type' => 'message',
             'title' => auth()->user()->name . ' sent you a message',
             'body' => $this->getMessagePreview($message),
@@ -238,10 +285,7 @@ class MessageController extends Controller
         return response()->json($response);
     }
 
-    // Rest of the methods (markAsRead, addReaction, etc.) remain the same
-    // as they don't need changes based on the schema
-
-    public function markAsRead(Message $message)
+    public function markAsRead(Message $message): JsonResponse
     {
         if ($message->recipient_id !== auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -255,11 +299,11 @@ class MessageController extends Controller
         return response()->json(['message' => 'Message marked as read']);
     }
 
-    public function react(Request $request, Message $message)
+    public function react(Request $request, Message $message): JsonResponse
     {
         $request->validate([
             'reaction' => [
-                'nullable', // Allow null for removal
+                'nullable',
                 'string',
                 'regex:/^[\x{1F300}-\x{1F9FF}]$/u' // Only single emoji allowed
             ]
