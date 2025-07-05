@@ -66,7 +66,7 @@ Route::middleware('auth:sanctum')
         Route::get('/pinned', 'getPinnedNotifications');
         Route::get('/unread/count', 'getUnreadCount');
         Route::get('/{id}', 'getNotificationDetails');
-        Route::post('/{id}/read', 'markAsRead');
+        Route::post('/{id}/mark-as-read', 'markAsRead');
         Route::post('/read-all', 'markAllAsRead');
         Route::post('/{notification}/pin', 'pinNotification');
         Route::post('/{notification}/unpin', 'unpinNotification');
@@ -79,12 +79,13 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('conversations', [MessageController::class, 'getConversations']);
-    Route::get('messages/search', [MessageController::class, 'searchMessages']);
-    Route::get('messages/{user}', [MessageController::class, 'getMessages']);
-    Route::post('messages/{recipient}', [MessageController::class, 'sendMessage']);
-    Route::post('messages/{message}/read', [MessageController::class, 'markAsRead']);
-    Route::post('messages/{message}/reaction', [MessageController::class, 'react']);
+    Route::get('messages/conversations', [MessageController::class, 'getConversations']);
+    Route::get('messages/conversation/{user}', [MessageController::class, 'getMessages']);
+    Route::get('messages/users/search', [MessageController::class, 'searchUsers']);
+
+    Route::post('messages/send/{recipient_id}', [MessageController::class, 'sendMessage']);
+    Route::post('messages/{message}/mark-as-read', [MessageController::class, 'markAsRead']);
+    Route::post('messages/{message}/react', [MessageController::class, 'react']);
 });
 
 // Admin Routes
