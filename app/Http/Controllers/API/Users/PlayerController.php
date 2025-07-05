@@ -86,7 +86,7 @@ class PlayerController extends BaseController
     public function getMetrics(): JsonResponse
     {
         try {
-            $metrics = auth()->user()->metrics()
+            $metric = auth()->user()->metrics()
                 ->select([
                     'id',
                     'resting_hr',
@@ -98,180 +98,179 @@ class PlayerController extends BaseController
                     'created_at'
                 ])
                 ->latest()
-                ->get()
-                ->map(function ($metric) {
-                    return [
-                        'id' => $metric->id,
-                        'resting_hr' => [
-                            'value' => $metric->resting_hr,
-                            'unit' => 'bpm',
-                            'time' => $metric->created_at->format('g:i a')
-                        ],
-                        'max_hr' => [
-                            'value' => $metric->max_hr,
-                            'unit' => 'bpm',
-                            'time' => $metric->created_at->format('g:i a')
-                        ],
-                        'hrv' => [
-                            'value' => $metric->hrv,
-                            'unit' => 'ms',
-                            'time' => $metric->created_at->format('g:i a')
-                        ],
-                        'vo2_max' => [
-                            'value' => $metric->vo2_max,
-                            'unit' => 'ml/kg/min',
-                            'time' => $metric->created_at->format('g:i a')
-                        ],
-                        'weight' => [
-                            'value' => $metric->weight,
-                            'unit' => 'kg',
-                            'time' => $metric->created_at->format('g:i a')
-                        ],
-                        'reaction_time' => [
-                            'value' => $metric->reaction_time,
-                            'unit' => 'ms',
-                            'time' => $metric->created_at->format('g:i a')
-                        ]
-                    ];
-                });
+                ->first();
 
-            return $this->successResponse(['metrics' => $metrics], 'Player metrics fetched successfully');
+            if (!$metric) {
+                return $this->successResponse(['metric' => null], 'No metrics found');
+            }
+
+            $formatted = [
+                'id' => $metric->id,
+                'resting_hr' => [
+                    'value' => $metric->resting_hr,
+                    'unit' => 'bpm',
+                    'time' => $metric->created_at->format('g:i a')
+                ],
+                'max_hr' => [
+                    'value' => $metric->max_hr,
+                    'unit' => 'bpm',
+                    'time' => $metric->created_at->format('g:i a')
+                ],
+                'hrv' => [
+                    'value' => $metric->hrv,
+                    'unit' => 'ms',
+                    'time' => $metric->created_at->format('g:i a')
+                ],
+                'vo2_max' => [
+                    'value' => $metric->vo2_max,
+                    'unit' => 'ml/kg/min',
+                    'time' => $metric->created_at->format('g:i a')
+                ],
+                'weight' => [
+                    'value' => $metric->weight,
+                    'unit' => 'kg',
+                    'time' => $metric->created_at->format('g:i a')
+                ],
+                'reaction_time' => [
+                    'value' => $metric->reaction_time,
+                    'unit' => 'ms',
+                    'time' => $metric->created_at->format('g:i a')
+                ]
+            ];
+
+            return $this->successResponse(['metric' => $formatted], 'Latest player metric fetched successfully');
+
         } catch (\Exception $e) {
             return $this->errorResponse('Failed to fetch metrics', [], 500);
         }
     }
 
+
     public function requestAssessment(AssessmentRequest $request): JsonResponse
     {
-        // 1. Check if doctor is available at requested time
-        $doctorHasConflict = Assessment::where('doctor_id', $doctor->id)
-            ->where('requested_at', $requestedAt)
-            ->exists();
-
-        if ($doctorHasConflict) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'The doctor is not available at this time. Please choose another time.',
-                'data' => []
-            ], 409);
-        }
-
-        // 2. Check if player already has an assessment at this time
-        $playerHasConflict = Assessment::where('player_id', auth()->id())
-            ->where('requested_at', $requestedAt)
-            ->exists();
-
-        if ($playerHasConflict) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You already have an assessment scheduled at this time.',
-                'data' => []
-            ], 409);
-        }
         try {
-            // Find available doctor first
-            $doctor = User::where('role', 'doctor')->first();
+            $player = auth()->user();
 
-            if (!$doctor) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No doctor available',
-                    'data' => []
-                ], 404);
+            // 1. Ensure only players can make requests
+            if ($player->role !== 'player') {
+                return $this->errorResponse('Only players can request assessments.', [], 403);
             }
 
+            // 2. Build the datetime from date and hour input
+            $requestedAt = Carbon::parse("{$request->date} {$request->hour}");
+
+            // 3. Check if the player has requested an assessment in the last 24 hours
+            $recentRequest = Assessment::where('player_id', $player->id)
+                ->where('created_at', '>=', now()->subDay())
+                ->exists();
+
+            if ($recentRequest) {
+                return $this->errorResponse('You can only request one assessment every 24 hours.', [], 429);
+            }
+
+            // 4. Check if the player already has an assessment at that exact time
+            $duplicateTime = Assessment::where('player_id', $player->id)
+                ->where('requested_at', $requestedAt)
+                ->exists();
+
+            if ($duplicateTime) {
+                return $this->errorResponse('You already have an assessment scheduled at this time.', [], 409);
+            }
+
+            // 5. Find a doctor who is not already booked at that time
+            $doctor = User::where('role', 'doctor')
+                ->whereDoesntHave('assessments', function ($query) use ($requestedAt) {
+                    $query->whereIn('status', ['pending', 'approved', 'postponed'])
+                        ->where('requested_at', $requestedAt);
+                })
+                ->first();
+
+            if (!$doctor) {
+                return $this->errorResponse('No doctor is available at the requested time.', [], 409);
+            }
+
+            // 6. Create the assessment
             $assessment = Assessment::create([
-                'player_id' => auth()->id(),
+                'player_id' => $player->id,
                 'doctor_id' => $doctor->id,
                 'issue_type' => $request->issue_type,
                 'message' => $request->message,
-                'requested_at' => Carbon::parse($request->date . ' ' . $request->hour),
-                'status' => 'pending'
+                'requested_at' => $requestedAt,
+                'status' => 'pending',
             ]);
 
-            // Create notification for the assigned doctor
+            // 7. Notify the doctor
             try {
                 $doctor->notifications()->create([
                     'user_id' => $doctor->id,
                     'type' => 'assessment',
                     'title' => 'New Assessment Request',
-                    'body' => auth()->user()->profile->first_name . ' has requested an assessment.',
-                    'sender_id' => auth()->id(),
+                    'body' => "{$player->profile->first_name} has requested an assessment.",
+                    'sender_id' => $player->id,
                     'related_assessment_id' => $assessment->id,
                     'read_at' => null,
-                    'is_pinned' => false
+                    'is_pinned' => false,
                 ]);
             } catch (\Exception $e) {
-                \Log::error('Failed to create doctor notification: ' . $e->getMessage());
-                \Log::error('Error details: ' . $e->getTraceAsString());
+                \Log::warning('Notification failed: ' . $e->getMessage());
             }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Assessment request created successfully',
-                'data' => [
-                    'assessment' => $assessment
+            // 8. Return success
+            return $this->successResponse([
+                'assessment' => [
+                    'id' => $assessment->id,
+                    'doctor_id' => $assessment->doctor_id,
+                    'issue_type' => $assessment->issue_type,
+                    'message' => $assessment->message,
+                    'requested_at' => $assessment->requested_at->format('Y-m-d H:i'),
+                    'status' => $assessment->status,
                 ]
-            ], 200);
+            ], 'Assessment request created successfully.');
+
         } catch (\Exception $e) {
             \Log::error('Assessment request error: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to create assessment request',
-                'data' => []
-            ], 500);
+            return $this->errorResponse('Failed to create assessment request', [], 500);
         }
     }
 
-
     public function getTrainingProgram(): JsonResponse
-{
-    try {
-        $user = auth()->user();
+    {
+        try {
+            $user = auth()->user();
 
-        // Get the latest training program (could be approved or pending)
-        $latestProgram = $user->trainingPrograms()->latest()->first();
-
-        if (!$latestProgram) {
-            return $this->errorResponse('No training program found', [], 404);
-        }
-
-        // If latest is approved, use it
-        if ($latestProgram->status === 'approved') {
-            $program = $latestProgram;
-        } else {
-            // Try to find the most recent approved program (excluding the pending one)
             $program = $user->trainingPrograms()
                 ->where('status', 'approved')
-                ->where('id', '<>', $latestProgram->id)
                 ->latest()
                 ->first();
 
             if (!$program) {
-                return $this->errorResponse('No approved training program available', [], 404);
+                return $this->errorResponse(
+                    "Your new training program is being prepared. You'll receive a notification once it's ready",
+                    [],
+                    404
+                );
             }
+
+            $exerciseList = $program->exercises['program'] ?? [];
+
+            return $this->successResponse([
+                'program' => [
+                    'id' => $program->id,
+                    'focus_area' => $program->focus_area,
+                    'exercises' => $exerciseList,
+                    'status' => $program->status,
+                    'created_at' => $program->created_at,
+                    'updated_at' => $program->updated_at
+                ]
+            ], 'Training program fetched successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Training program fetch error: ' . $e->getMessage());
+            return $this->errorResponse('Failed to fetch training program', [], 500);
         }
-
-        $exerciseList = $program->exercises['program'] ?? [];
-
-        return $this->successResponse([
-            'program' => [
-                'id' => $program->id,
-                'focus_area' => $program->focus_area,
-                'exercises' => $exerciseList,
-                'status' => $program->status,
-                'created_at' => $program->created_at,
-                'updated_at' => $program->updated_at
-            ]
-        ], 'Training program fetched successfully');
-
-    } catch (\Exception $e) {
-        \Log::error('Training program fetch error: ' . $e->getMessage());
-        return $this->errorResponse('Failed to fetch training program', [], 500);
     }
-}
 
-    public function getMetricDetail(Request $request, string $metricType)
+    public function getMetricDetail(Request $request, string $metricType): JsonResponse
     {
         try {
             $player = auth()->user();
@@ -305,17 +304,21 @@ class PlayerController extends BaseController
                 $metricType
             );
 
-            return $this->successResponse([
-                'player' => [
-                    'id' => $player->id,
-                    'name' => $player->name
+            return $this->successResponse(
+                [
+                    'player' => [
+                        'id' => $player->id,
+                        'name' => $player->name
+                    ],
+                    'metric_type' => $metricType,
+                    'period' => $period,
+                    'graph_data' => $metrics,
+                    'highlights' => $analysis['highlights'] ?? [],
+                    'trend' => $analysis['trend'] ?? null
                 ],
-                'metric_type' => $metricType,
-                'period' => $period,
-                'graph_data' => $metrics,
-                'highlights' => $analysis['highlights'] ?? [],
-                'trend' => $analysis['trend'] ?? null
-            ]);
+                'Metric insights generated based on recent performance data.'
+            );
+
         } catch (\Exception $e) {
             return $this->errorResponse('Failed to fetch metric detail', [], 500);
         }

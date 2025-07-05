@@ -18,13 +18,13 @@ Route::middleware(['throttle:6,1'])->group(function () { // 6 attempts per minut
 });
 
 // Player Routes
-Route::middleware(['auth:sanctum', 'role:player'])->group(function () {
-    Route::get('player/dashboard', [PlayerController::class, 'getDashboard']);
-    Route::get('player/profile', [PlayerController::class, 'getProfile']);
-    Route::get('player/metrics', [PlayerController::class, 'getMetrics']);
-    Route::get('player/metrics/{metricType}', [PlayerController::class, 'getMetricDetail']);
-    Route::post('player/request-assessment', [PlayerController::class, 'requestAssessment']);
-    Route::get('player/training-program', [PlayerController::class, 'getTrainingProgram']);
+Route::middleware(['auth:sanctum', 'role:player'])->prefix('player')->group(function () {
+    Route::get('dashboard', [PlayerController::class, 'getDashboard']);
+    Route::get('profile', [PlayerController::class, 'getProfile']);
+    Route::get('metrics', [PlayerController::class, 'getMetrics']);
+    Route::get('metrics/details/{metricType}', [PlayerController::class, 'getMetricDetail']);
+    Route::post('assessments/request', [PlayerController::class, 'requestAssessment']);
+    Route::get('training-program/current', [PlayerController::class, 'getTrainingProgram']);
 });
 
 Route::middleware(['auth:sanctum', 'role:coach'])->prefix('coach')->group(function () {

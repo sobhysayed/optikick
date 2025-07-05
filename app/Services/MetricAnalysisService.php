@@ -13,7 +13,7 @@ class MetricAnalysisService
         $highlights = [];
         $trend = $this->calculateTrend($values);
 
-        // Find peak and lowest values
+        // Peak and lowest
         $peak = max($values);
         $lowest = min($values);
         $peakDay = array_search($peak, $values) + 1;
@@ -26,59 +26,59 @@ class MetricAnalysisService
                 if ($peakDay > 4) {
                     $highlights[] = "Days 5-6 remain stable, indicating a possible plateau.";
                 }
-                $highlights[] = "The Day {$peakDay} peak ({$peak}+ ms) vs Day {$lowestDay} drop ({$lowest}- ms) suggests fatigue, training, or focus impact.";
+                $highlights[] = "The Day {$peakDay} peak ({$peak} ms) vs Day {$lowestDay} low ({$lowest} ms) suggests fatigue, training, or focus impact.";
                 break;
 
             case 'weight':
-                $weightChange = $peak - $lowest;
-                $highlights[] = $trend > 0
-                    ? "Weight shows an increasing trend of {$weightChange} kg over the period."
-                    : "Weight shows a decreasing trend of {$weightChange} kg over the period.";
+                $change = $peak - $lowest;
+                $direction = $trend > 0 ? 'increase' : 'decrease';
+                $highlights[] = "Weight shows a {$direction} of {$change} kg over the period.";
+                $highlights[] = "Highest weight recorded on Day {$peakDay} ({$peak} kg), lowest on Day {$lowestDay} ({$lowest} kg).";
 
-                if (abs($weightChange) > 2) {
-                    $highlights[] = "Significant weight change detected. Consider reviewing nutrition and training load.";
+                if (abs($change) > 2) {
+                    $highlights[] = "Significant weight fluctuation may indicate hydration shifts or diet/training changes.";
                 }
-
-                if ($peakDay - $lowestDay < 3) {
-                    $highlights[] = "Rapid weight fluctuation between Day {$lowestDay} and Day {$peakDay}. May indicate hydration changes.";
+                if (abs($peakDay - $lowestDay) <= 2) {
+                    $highlights[] = "Rapid weight shift detected between Day {$lowestDay} and Day {$peakDay}.";
                 }
                 break;
 
             case 'max_hr':
+                $highlights[] = "Day {$peakDay} recorded the highest max HR at {$peak} bpm, and Day {$lowestDay} the lowest at {$lowest} bpm.";
                 $highlights[] = $trend > 0
-                    ? "Increasing max heart rate could suggest higher workout intensity or testing conditions."
-                    : "Decreasing max heart rate might reflect fatigue, underperformance, or poor recovery.";
+                    ? "Max heart rate trend is rising — could suggest higher effort or training intensity."
+                    : "Decreasing max HR trend may indicate fatigue or insufficient recovery.";
 
                 if ($peak > 190) {
-                    $highlights[] = "Peak heart rate over 190 bpm may indicate near-max effort or high stress.";
+                    $highlights[] = "Max HR over 190 bpm may suggest near-max effort or high stress conditions.";
                 }
-
                 if (($peak - $lowest) > 20) {
-                    $highlights[] = "Large fluctuations in max HR across days could indicate inconsistent performance or varying effort levels.";
+                    $highlights[] = "Large HR variation across days may reflect inconsistent performance or testing variability.";
                 }
-
-                $highlights[] = "Day {$peakDay} peak ({$peak} bpm) vs Day {$lowestDay} low ({$lowest} bpm) gives insight into intensity swings.";
                 break;
 
             case 'resting_hr':
+                $highlights[] = "Resting heart rate peaked on Day {$peakDay} at {$peak} bpm, and was lowest on Day {$lowestDay} at {$lowest} bpm.";
                 $highlights[] = $trend > 0
-                    ? "Increasing resting heart rate trend may indicate accumulated fatigue."
-                    : "Decreasing resting heart rate suggests improving cardiovascular fitness.";
-                if (max($values) > 70) {
-                    $highlights[] = "Peak heart rate above 70 bpm might indicate stress or incomplete recovery.";
+                    ? "An increasing trend may indicate cumulative fatigue or stress."
+                    : "A decreasing trend suggests improving cardiovascular recovery.";
+                if ($peak > 70) {
+                    $highlights[] = "Resting HR above 70 bpm could be due to stress, poor sleep, or incomplete recovery.";
                 }
                 break;
 
             case 'hrv':
+                $highlights[] = "HRV highest on Day {$peakDay} ({$peak} ms) and lowest on Day {$lowestDay} ({$lowest} ms).";
                 $highlights[] = $trend > 0
-                    ? "Increasing HRV trend indicates improving recovery and adaptation."
-                    : "Decreasing HRV trend suggests potential stress or fatigue.";
+                    ? "Positive HRV trend indicates improved recovery and nervous system balance."
+                    : "Decline in HRV may signal stress, illness, or overtraining.";
                 break;
 
             case 'vo2_max':
+                $highlights[] = "VO2 Max peaked at {$peak} ml/kg/min on Day {$peakDay}, lowest on Day {$lowestDay} at {$lowest} ml/kg/min.";
                 $highlights[] = $trend > 0
-                    ? "VO2 Max is showing improvement, indicating enhanced aerobic capacity."
-                    : "Slight decrease in VO2 Max, might need to adjust training intensity.";
+                    ? "Improvement in VO2 Max suggests better aerobic capacity and endurance."
+                    : "Drop in VO2 Max could reflect fatigue or need for adjusted training.";
                 break;
         }
 
