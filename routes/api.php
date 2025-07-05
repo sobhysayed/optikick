@@ -29,11 +29,11 @@ Route::middleware(['auth:sanctum', 'role:player'])->prefix('player')->group(func
 
 Route::middleware(['auth:sanctum', 'role:coach'])->prefix('coach')->group(function () {
     Route::get('dashboard', [CoachController::class, 'getDashboard']);
-    Route::get('/profile', [CoachController::class, 'getProfile']);
+    Route::get('profile', [CoachController::class, 'getProfile']);
     Route::get('list-all-players', [CoachController::class, 'listAllPlayers']);
     Route::get('players/{player}/program', [CoachController::class, 'getPlayerProgram']);
     Route::get('players/{player}/metrics', [CoachController::class, 'getPlayerMetrics']);
-    Route::get('players/{player}/metrics/{metricType}', [CoachController::class, 'getPlayerMetricDetail']);
+    Route::get('players/{player}/metrics/details/{metricType}', [CoachController::class, 'getPlayerMetricDetail']);
 });
 
 // Doctor Routes
