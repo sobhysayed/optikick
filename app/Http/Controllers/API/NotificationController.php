@@ -25,16 +25,14 @@ class NotificationController extends Controller
                 'title' => $notification->title,
                 'body' => $notification->body,
                 'sender' => [
-                    'name' => $notification->sender->name ?? null,
-                    'username' => $notification->sender->email ? explode('@', $notification->sender->email)[0] : null,
+                    'name' => 'DR. ' . $notification->sender->name ?? null,
+                    'username' => $notification->sender && $notification->sender->email
+                        ? '@' . explode('@', $notification->sender->email)[0]
+                        : null,
                 ],
                 'read_at' => $notification->read_at,
                 'created_at' => $notification->created_at,
                 'is_pinned' => $notification->is_pinned,
-                'metadata' => [
-                    'related_program_id' => $notification->related_program_id,
-                    'assessment_id' => $notification->assessment_id,
-                ],
                 'navigate_to' => $notification->navigate_to,
             ];
         });
@@ -72,15 +70,6 @@ class NotificationController extends Controller
             ->count();
 
         return response()->json(['count' => $count]);
-    }
-
-    public function getNotificationDetails($id): JsonResponse
-    {
-        $notification = auth()->user()
-            ->notifications()
-            ->findOrFail($id);
-
-        return response()->json($notification);
     }
 
     public function markAsRead($id): JsonResponse

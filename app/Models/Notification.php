@@ -59,18 +59,18 @@ class Notification extends Model
         return $this->update(['is_pinned' => false]);
     }
 
-    public function getNavigateToAttribute()
+    public function getNavigateToAttribute(): ?string
     {
         switch ($this->type) {
             case 'message':
-            case 'react':
-                return '/messages/' . $this->sender_id;
+            case 'reaction':
+            return $this->sender_id ? '/messages/' . $this->sender_id : null;
+
             case 'training_program':
-                return '/training-program/' . $this->related_program_id;
-            case 'assessment_request':
-                return '/assessments/' . $this->related_assessment_id;
+                return '/training-program/current';
+
             default:
-                return null;
+                return "No action available for this notification.";
         }
     }
 }
