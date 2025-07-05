@@ -64,7 +64,7 @@ class Notification extends Model
         switch ($this->type) {
             case 'message':
             case 'reaction':
-            return $this->sender_id ? '/messages/' . $this->sender_id : null;
+            return $this->sender_id ? '/messages/conversation/' . $this->sender_id : null;
 
             case 'training_program':
                 return '/training-program/current';
