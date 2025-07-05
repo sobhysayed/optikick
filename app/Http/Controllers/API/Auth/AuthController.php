@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\API\Auth;
 
-use App\Http\Controllers\API\BaseController;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -12,18 +12,34 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 
-class AuthController extends BaseController
+class AuthController extends Controller
 {
+    public function successResponse($data, $message = null, $code = 200): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'message' => $message,
+            'data' => $data
+        ], $code);
+    }
+
+    public function errorResponse($message, $data = [], $code = 400): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => $message,
+            'data' => $data
+        ], $code);
+    }
+
     public function login(LoginRequest $request): JsonResponse
     {
         try {
             $identifier = $request->input('identifier');
-            $user = null;
-            if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-                $user = User::where('email', $identifier)->first();
-            } else {
-                $user = User::where('login_id', $identifier)->first();
-            }
+
+            $user = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+                ? User::where('email', $identifier)->first()
+                : User::where('login_id', $identifier)->first();
 
             if (!$user || !Hash::check($request->password, $user->password)) {
                 return $this->errorResponse('Invalid credentials', [], 401);
@@ -37,10 +53,9 @@ class AuthController extends BaseController
                 'token_type' => 'Bearer',
                 'user' => [
                     'id' => $user->id,
-                    'login_id' => $user->login_id,
-                    'email' => $user->email,
                     'role' => $user->role,
-                    'profile' => $user->profile
+                    'first_name' => $user->profile->first_name ?? null,
+                    'last_name' => $user->profile->last_name ?? null,
                 ]
             ], 'Successfully logged in');
 
@@ -62,7 +77,6 @@ class AuthController extends BaseController
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate([
-            // 'identifier' can be login_id or email
             'identifier' => 'required|string'
         ]);
 
@@ -97,22 +111,19 @@ class AuthController extends BaseController
                 }
             );
 
-            // Mask the email for privacy
             $maskedEmail = $this->maskEmail($user->email);
 
-            return $this->successResponse([
-                'message' => 'Password reset code has been sent to your email',
-                'email' => $maskedEmail
-            ]);
+            return $this->successResponse(
+                ['email' => $maskedEmail],
+                'A 6-digit password reset code has been sent to your registered email address. Please use this code to reset your password within the next 60 minutes.'
+            );
+
 
         } catch (\Exception $e) {
             return $this->errorResponse('Failed to send reset code');
         }
     }
 
-    /**
-     * Mask an email address for privacy
-     */
     private function maskEmail($email): string
     {
         $parts = explode('@', $email);
@@ -129,13 +140,21 @@ class AuthController extends BaseController
     public function verifyResetToken(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email',
-            'token' => 'required|string'
+            'identifier' => 'required|string',
+            'token' => 'required|string',
         ]);
 
         try {
+            $user = filter_var($request->identifier, FILTER_VALIDATE_EMAIL)
+                ? User::where('email', $request->identifier)->first()
+                : User::where('login_id', $request->identifier)->first();
+
+            if (!$user) {
+                return $this->errorResponse('User not found', [], 404);
+            }
+
             $resetRecord = DB::table('password_reset_tokens')
-                ->where('email', $request->email)
+                ->where('email', $user->email)
                 ->where('token', $request->token)
                 ->where('created_at', '>', now()->subHours(1))
                 ->first();
@@ -144,11 +163,13 @@ class AuthController extends BaseController
                 return $this->errorResponse('Invalid or expired code', [], 400);
             }
 
-            return $this->successResponse([
-                'message' => 'Code verified successfully',
-                'email' => $request->email,
-                'token' => $request->token
-            ]);
+            return $this->successResponse(
+                [
+                    'email' => $user->email,
+                    'token' => $request->token
+                ],
+                'Code verified successfully'
+            );
 
         } catch (\Exception $e) {
             return $this->errorResponse('Failed to verify code');
@@ -158,14 +179,25 @@ class AuthController extends BaseController
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed'
+            'identifier' => 'required|string',
+            'token' => 'required|string',
+            'password' => 'required|min:8|confirmed',
+        ], [
+            'password.min' => 'Password must be at least 8 characters.',
+            'password.confirmed' => 'Password confirmation does not match.',
         ]);
 
         try {
+            $user = filter_var($request->identifier, FILTER_VALIDATE_EMAIL)
+                ? User::where('email', $request->identifier)->first()
+                : User::where('login_id', $request->identifier)->first();
+
+            if (!$user) {
+                return $this->errorResponse('User not found', [], 404);
+            }
+
             $resetRecord = DB::table('password_reset_tokens')
-                ->where('email', $request->email)
+                ->where('email', $user->email)
                 ->where('token', $request->token)
                 ->where('created_at', '>', now()->subHours(1))
                 ->first();
@@ -174,21 +206,25 @@ class AuthController extends BaseController
                 return $this->errorResponse('Invalid or expired token');
             }
 
-            $user = User::where('email', $request->email)->first();
             $user->password = Hash::make($request->password);
             $user->save();
 
             DB::table('password_reset_tokens')
-                ->where('email', $request->email)
+                ->where('email', $user->email)
                 ->delete();
 
-            // Auto-login
             $token = $user->createToken('reset-password-token')->plainTextToken;
+            $user->load('profile');
 
             return $this->successResponse([
                 'token' => $token,
                 'token_type' => 'Bearer',
-                'user' => $user->load('profile')
+                'user' => [
+                    'id' => $user->id,
+                    'role' => $user->role,
+                    'first_name' => $user->profile->first_name ?? null,
+                    'last_name' => $user->profile->last_name ?? null,
+                ]
             ], 'Password reset successfully');
 
         } catch (\Exception $e) {
