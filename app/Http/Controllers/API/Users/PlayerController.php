@@ -145,27 +145,32 @@ class PlayerController extends BaseController
         }
     }
 
-
-    public function requestAssessment(AssessmentRequest $request): JsonResponse
+    public function requestAssessment(Request $request): JsonResponse
     {
         try {
             $player = auth()->user();
 
-            // 1. Ensure only players can make requests
             if ($player->role !== 'player') {
-                return $this->errorResponse('Only players can request assessments.', [], 403);
+                return response()->json(['message' => 'Only players can request assessments.'], 403);
             }
 
-            // 2. Build the datetime from date and hour input
-            $requestedAt = Carbon::parse("{$request->date} {$request->hour}");
+            // 1. Validate input
+            $data = $request->validate([
+                'date' => 'required|date',
+                'hour' => 'required|date_format:H:i',
+                'issue_type' => 'required|string|max:255',
+                'message' => 'required|string|max:1000',
+            ]);
 
-            // 3. Check if the player has requested an assessment in the last 24 hours
-            $recentRequest = Assessment::where('player_id', $player->id)
+            $requestedAt = Carbon::parse("{$data['date']} {$data['hour']}");
+
+            // 2. Prevent multiple requests in 24 hours
+            $recentRequest = \App\Models\AssessmentRequest::where('player_id', $player->id)
                 ->where('created_at', '>=', now()->subDay())
                 ->exists();
 
             if ($recentRequest) {
-                return $this->errorResponse('You can only request one assessment every 24 hours.', [], 429);
+                return response()->json(['message' => 'You can only request one assessment every 24 hours.'], 429);
             }
 
             // 4. Check if the player already has an assessment at that exact time
@@ -189,49 +194,40 @@ class PlayerController extends BaseController
                 return $this->errorResponse('No doctor is available at the requested time.', [], 409);
             }
 
-            // 6. Create the assessment
             $assessment = Assessment::create([
-                'player_id' => $player->id,
-                'doctor_id' => $doctor->id,
-                'issue_type' => $request->issue_type,
-                'message' => $request->message,
+                'player_id'    => $player->id,
+                'doctor_id'    => $doctor->id,
+                'issue_type'   => $data['issue_type'],
+                'message'      => $data['message'],
                 'requested_at' => $requestedAt,
-                'status' => 'pending',
+                'status'       => 'pending',
             ]);
 
-            // 7. Notify the doctor
-            try {
-                $doctor->notifications()->create([
-                    'user_id' => $doctor->id,
-                    'type' => 'assessment',
-                    'title' => 'New Assessment Request',
-                    'body' => "{$player->profile->first_name} has requested an assessment.",
-                    'sender_id' => $player->id,
-                    'related_assessment_id' => $assessment->id,
-                    'read_at' => null,
-                    'is_pinned' => false,
-                ]);
-            } catch (\Exception $e) {
-                \Log::warning('Notification failed: ' . $e->getMessage());
-            }
+            $doctor->notifications()->create([
+                'user_id' => $doctor->id,
+                'type' => 'assessment',
+                'title' => 'New Assessment Request',
+                'body' => optional($player->profile)->first_name . ' has requested an assessment.',
+                'sender_id' => $player->id,
+                'related_assessment_id' => $assessment->id,
+            ]);
 
-            // 8. Return success
-            return $this->successResponse([
-                'assessment' => [
+            return response()->json([
+                'message' => 'Assessment created successfully.',
+                'data' => [
                     'id' => $assessment->id,
-                    'doctor_id' => $assessment->doctor_id,
-                    'issue_type' => $assessment->issue_type,
-                    'message' => $assessment->message,
-                    'requested_at' => $assessment->requested_at->format('Y-m-d H:i'),
+                    'doctor' => $doctor->name,
+                    'requested_at' => $assessment->requested_at->toDateTimeString(),
                     'status' => $assessment->status,
                 ]
-            ], 'Assessment request created successfully.');
+            ], 201);
 
         } catch (\Exception $e) {
-            \Log::error('Assessment request error: ' . $e->getMessage());
-            return $this->errorResponse('Failed to create assessment request', [], 500);
+            \Log::error('Error creating assessment: ' . $e->getMessage());
+            return response()->json(['message' => 'Something went wrong.'], 500);
         }
     }
+
 
     public function getTrainingProgram(): JsonResponse
     {
