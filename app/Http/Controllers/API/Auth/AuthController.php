@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\API\Auth;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\API\BaseController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -12,26 +12,8 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 
-class AuthController extends Controller
+class AuthController extends BaseController
 {
-    public function successResponse($data, $message = null, $code = 200): JsonResponse
-    {
-        return response()->json([
-            'status' => 'success',
-            'message' => $message,
-            'data' => $data
-        ], $code);
-    }
-
-    public function errorResponse($message, $data = [], $code = 400): JsonResponse
-    {
-        return response()->json([
-            'status' => 'error',
-            'message' => $message,
-            'data' => $data
-        ], $code);
-    }
-
     public function login(LoginRequest $request): JsonResponse
     {
         try {
