@@ -183,15 +183,6 @@ class User extends Authenticatable
         'admin' => 'Admin'
     ];
 
-    public function players()
-{
-    return $this->hasMany(User::class, 'coach_id');
-}
-
-public function coach()
-{
-    return $this->belongsTo(User::class, 'coach_id');
-}
 
 public function notifyCoach($title, $body, $type, $metadata = [])
 {
@@ -201,7 +192,7 @@ public function notifyCoach($title, $body, $type, $metadata = [])
     if ($coach) {
         return Notification::create([
             'user_id' => $coach->id,
-            'type' => 'assessment',  // Updated to match enum in migration
+            'type' => $type,  // Updated to match enum in migration
             'title' => $title,
             'body' => $body,
             'sender_id' => $this->id,

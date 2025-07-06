@@ -49,29 +49,35 @@ class TrainingProgram extends Model
 
         static::created(function ($program) {
             $player = $program->player;
-            $player->notifyCoach(
-                'New Training Program',
-                "A new training program has been created for {$player->name}",
-                'program_created',
-                ['program_id' => $program->id]
-            );
+
+            if ($player) {
+                try {
+                    $player->notifyCoach(
+                        'New Training Program',
+                        "A new training program has been created for {$player->name}",
+                        'program_created',
+                        ['program_id' => $program->id]
+                    );
+                } catch (\Exception $e) {
+                    \Log::error('Failed to notify coach about new training program: ' . $e->getMessage());
+                }
+            }
         });
 
         static::updated(function ($program) {
             if ($program->isDirty('status')) {
-                $oldStatus = $program->getOriginal('status');
-                $newStatus = $program->status;
+                $player = $program->player;
 
-                if ($oldStatus !== $newStatus) {
-                    $player = $program->player;
-
-                    if ($player && $player->coach) {
+                if ($player) {
+                    try {
                         $player->notifyCoach(
                             'Training Program Update',
-                            "{$player->name}'s training program status: {$newStatus}",
+                            "{$player->name}'s training program status: {$program->status}",
                             'program_update',
                             ['program_id' => $program->id]
                         );
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to notify coach about training program update: ' . $e->getMessage());
                     }
                 }
             }
