@@ -46,7 +46,7 @@ class TrainingProgram extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
         static::created(function ($program) {
             $player = $program->player;
             $player->notifyCoach(
@@ -56,16 +56,24 @@ class TrainingProgram extends Model
                 ['program_id' => $program->id]
             );
         });
-    
+
         static::updated(function ($program) {
             if ($program->isDirty('status')) {
-                $player = $program->player;
-                $player->notifyCoach(
-                    'Training Program Update',
-                    "{$player->name}'s training program status: {$program->status}",
-                    'program_update',
-                    ['program_id' => $program->id]
-                );
+                $oldStatus = $program->getOriginal('status');
+                $newStatus = $program->status;
+
+                if ($oldStatus !== $newStatus) {
+                    $player = $program->player;
+
+                    if ($player && $player->coach) {
+                        $player->notifyCoach(
+                            'Training Program Update',
+                            "{$player->name}'s training program status: {$newStatus}",
+                            'program_update',
+                            ['program_id' => $program->id]
+                        );
+                    }
+                }
             }
         });
     }
