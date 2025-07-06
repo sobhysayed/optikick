@@ -13,6 +13,11 @@ class ListTrainingPrograms extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('managePlayers')
+                ->label('Manage Players')
+                ->icon('heroicon-o-users')
+                ->url(route('filament.admin.resources.training-programs.players'))
+                ->visible(fn () => auth()->user()->role === 'admin'),
         ];
     }
 }

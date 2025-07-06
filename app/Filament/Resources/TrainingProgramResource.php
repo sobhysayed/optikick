@@ -25,120 +25,81 @@ class TrainingProgramResource extends Resource
                 Forms\Components\Select::make('player_id')
                     ->relationship('player', 'name')
                     ->required(),
-                Forms\Components\Select::make('created_by')
-                    ->relationship('creator', 'name')
+                Forms\Components\Select::make('doctor_id')
+                    ->relationship('doctor', 'name')
                     ->required(),
-                Forms\Components\TextInput::make('title')
-                    ->required()
+                Forms\Components\TextInput::make('focus_area')
                     ->maxLength(255),
-                Forms\Components\Textarea::make('description')
-                    ->required()
-                    ->maxLength(65535),
-                Forms\Components\Select::make('type')
-                    ->options([
-                        'strength' => 'Strength',
-                        'cardio' => 'Cardio',
-                        'flexibility' => 'Flexibility',
-                        'recovery' => 'Recovery',
-                        'custom' => 'Custom'
-                    ])
-                    ->required(),
                 Forms\Components\Select::make('status')
                     ->options([
-                        'draft' => 'Draft',
+                        'pending' => 'Pending',
+                        'approved' => 'Approved',
+                        'rejected' => 'Rejected',
                         'active' => 'Active',
-                        'completed' => 'Completed',
-                        'cancelled' => 'Cancelled'
+                        'completed' => 'Completed'
                     ])
                     ->required(),
-                Forms\Components\DatePicker::make('start_date')
-                    ->required(),
-                Forms\Components\DatePicker::make('end_date')
-                    ->required(),
-                Forms\Components\Toggle::make('is_ai_generated')
-                    ->required(),
-                Forms\Components\Toggle::make('is_approved')
-                    ->required(),
+                Forms\Components\Toggle::make('ai_generated')
+                    ->label('AI Generated'),
+                Forms\Components\DateTimePicker::make('approved_at')
+                    ->label('Approved At'),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->query(User::where('role', 'player'))
             ->columns([
-                Tables\Columns\TextColumn::make('name')
+                Tables\Columns\TextColumn::make('player.name')
+                    ->label('Player')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('email')
+                Tables\Columns\TextColumn::make('doctor.name')
+                    ->label('Doctor')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('focus_area')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('profile.position')
-                    ->label('Position'),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'active' => 'success',
-                        'inactive' => 'danger',
-                        default => 'warning',
+                        'approved' => 'success',
+                        'pending' => 'warning',
+                        'rejected' => 'danger',
+                        'active' => 'info',
+                        'completed' => 'secondary',
+                        default => 'gray',
                     }),
+                Tables\Columns\IconColumn::make('ai_generated')
+                    ->boolean()
+                    ->label('AI Generated'),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'pending' => 'Pending',
+                        'approved' => 'Approved',
+                        'rejected' => 'Rejected',
+                        'active' => 'Active',
+                        'completed' => 'Completed'
+                    ]),
+                Tables\Filters\TernaryFilter::make('ai_generated')
+                    ->label('AI Generated'),
             ])
             ->actions([
-                Tables\Actions\Action::make('generateProgram')
-                    ->label('Generate Program')
-                    ->icon('heroicon-o-sparkles')
-                    ->requiresConfirmation()
-                    ->action(function (User $record) {
-                        try {
-                            $metrics = $record->metrics()->latest()->first();
-                            
-                            if (!$metrics) {
-                                Notification::make()
-                                    ->danger()
-                                    ->title('No metrics found')
-                                    ->body('Player must add metrics first')
-                                    ->send();
-                                return;
-                            }
-                            
-                            $aiService = new AIModelService();
-                            $doctor = User::where('role', 'doctor')->first();
-                            
-                            if (!$doctor) {
-                                Notification::make()
-                                    ->danger()
-                                    ->title('No doctor found')
-                                    ->body('System requires at least one doctor')
-                                    ->send();
-                                return;
-                            }
-                            
-                            $program = $aiService->generateTrainingProgram($record, $metrics, $doctor);
-                            
-                            $doctor->notifications()->create([
-                                'user_id' => $doctor->id,
-                                'type' => 'training_program',
-                                'title' => 'New Training Program Generated',
-                                'body' => "A new training program has been generated for player {$record->name}",
-                                'sender_id' => auth()->id(),
-                                'related_program_id' => $program->id,
-                                'read_at' => null,
-                                'is_pinned' => false
-                            ]);
-                            
-                            Notification::make()
-                                ->success()
-                                ->title('Success')
-                                ->body('Training program generated successfully')
-                                ->send();
-                        } catch (\Exception $e) {
-                            \Log::error('Training program generation error: ' . $e->getMessage());
-                            Notification::make()
-                                ->danger()
-                                ->title('Error')
-                                ->body('Failed to generate training program')
-                                ->send();
-                        }
-                    })
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn ($record) => auth()->user()->role === 'admin' || auth()->user()->role === 'doctor'),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn () => auth()->user()->role === 'admin'),
+                ]),
             ]);
     }
 
@@ -146,6 +107,7 @@ class TrainingProgramResource extends Resource
     {
         return [
             'index' => Pages\ListTrainingPrograms::route('/'),
+            'players' => Pages\ListPlayers::route('/players'),
         ];
     }
 }

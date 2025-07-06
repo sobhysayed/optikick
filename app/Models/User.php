@@ -85,6 +85,11 @@ class User extends Authenticatable
         return $this->hasMany(TrainingProgram::class, 'player_id');
     }
 
+    public function latestTrainingProgram()
+    {
+        return $this->hasOne(TrainingProgram::class, 'player_id')->latest();
+    }
+
     public function assessmentRequests()
     {
         return $this->hasMany(AssessmentRequest::class, 'player_id');
