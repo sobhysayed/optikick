@@ -224,7 +224,7 @@ class PlayerController extends BaseController
 
         } catch (\Exception $e) {
             \Log::error('Error creating assessment: ' . $e->getMessage());
-            return response()->json(['message' => 'Something went wrong.'], 500);
+            return response()->json(['message' => $e->getMessage()], 500);
         }
     }
 

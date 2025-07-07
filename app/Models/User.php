@@ -94,6 +94,10 @@ class User extends Authenticatable
     {
         return $this->hasMany(AssessmentRequest::class, 'player_id');
     }
+    public function assessments()
+    {
+        return $this->hasMany(AssessmentRequest::class, 'doctor_id');
+    }
 
     public function assignedAssessments()
     {

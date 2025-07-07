@@ -18,7 +18,7 @@ class PlayerMetric extends Model
         'minutes_played',
         'training_hours',
         'injury_frequency',
-        'recovery_score',
+        'recovery_time',
         'fatigue_score',
         'injury_risk',
         'readiness_score',
@@ -37,10 +37,10 @@ class PlayerMetric extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
         static::created(function ($metric) {
             $player = $metric->player;
-            
+
             // Determine which metrics changed significantly
             $significantChanges = [];
             if ($metric->fatigue_score > 70) {
@@ -49,7 +49,7 @@ class PlayerMetric extends Model
             if ($metric->injury_risk > 70) {
                 $significantChanges[] = "elevated injury risk";
             }
-            
+
             if (!empty($significantChanges)) {
                 $player->notifyCoach(
                     'Player Metric Alert',
