@@ -60,7 +60,7 @@ class ProfileResource extends Resource
                     ->options(function ($get) {
                         $user = User::find($get('user_id'));
                         if (!$user) return [];
-                        
+
                         switch ($user->role) {
                             case 'coach':
                                 return [
