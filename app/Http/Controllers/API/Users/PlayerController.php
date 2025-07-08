@@ -270,17 +270,21 @@ class PlayerController extends BaseController
     {
         try {
             $player = auth()->user();
+
             if ($player->role !== 'player') {
                 return $this->errorResponse('Invalid player', [], 400);
             }
 
-            $period = $request->input('period', 'D'); // D=Daily, W=Weekly, M=Monthly, 6M=6 Months
+            // Allowed periods: W=Weekly (default), M=Monthly, 6M=6 Months
+            $requestedPeriod = strtoupper($request->input('period', 'W'));
+            $allowedPeriods = ['W', 'M', '6M'];
+
+            $period = in_array($requestedPeriod, $allowedPeriods) ? $requestedPeriod : 'W';
+
             $startDate = match($period) {
-                'D' => now()->subDays(7),
                 'W' => now()->subWeeks(4),
-                'M' => now()->subMonths(1),
+                'M' => now()->subMonth(),
                 '6M' => now()->subMonths(6),
-                default => now()->subDays(7)
             };
 
             $metrics = $player->metrics()

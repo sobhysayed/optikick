@@ -250,8 +250,14 @@ class DoctorController extends BaseController
     public function getPlayerMetricDetail(Request $request, User $player, string $metricType): JsonResponse
     {
         try {
+            $doctor = auth()->user();
+
+            if ($doctor->role !== 'doctor') {
+                return $this->errorResponse('Access denied: Only coaches can view player metrics.', [], 403);
+            }
+
             if ($player->role !== 'player') {
-                return $this->errorResponse('Invalid player selected', [], 400);
+                return $this->errorResponse('Invalid player selected.', [], 400);
             }
 
             // Valid metric fields
@@ -268,14 +274,15 @@ class DoctorController extends BaseController
                 return $this->errorResponse("Invalid metric type: '$metricType'.", [], 422);
             }
 
-            $period = $request->input('period', 'D'); // D=Daily, W=Weekly, M=Monthly, 6M=6 Months
+            // Only allow: W (Weekly), M (Monthly), 6M (6 Months) — default to W
+            $requestedPeriod = strtoupper($request->input('period', 'W'));
+            $allowedPeriods = ['W', 'M', '6M'];
+            $period = in_array($requestedPeriod, $allowedPeriods) ? $requestedPeriod : 'W';
 
             $startDate = match($period) {
-                'D' => now()->subDays(7),
                 'W' => now()->subWeeks(4),
                 'M' => now()->subMonth(),
                 '6M' => now()->subMonths(6),
-                default => now()->subDays(7)
             };
 
             $metrics = $player->metrics()
@@ -304,9 +311,10 @@ class DoctorController extends BaseController
                 'highlights' => $analysis['highlights'] ?? [],
                 'trend' => $analysis['trend'] ?? null
             ], 'Player performance data fetched successfully');
+
         } catch (\Exception $e) {
-            \Log::error('Failed to fetch metric detail', ['error' => $e->getMessage()]);
-            return $this->errorResponse('Failed to fetch metric detail', [], 500);
+            \Log::error('Failed to fetch player metric detail', ['error' => $e->getMessage()]);
+            return $this->errorResponse('Failed to fetch player metric detail', [], 500);
         }
     }
 
