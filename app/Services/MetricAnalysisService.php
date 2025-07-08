@@ -2,89 +2,95 @@
 
 namespace App\Services;
 
+/**
+ * Class MetricAnalysisService
+ * Analyzes health or performance metrics and returns insights.
+ */
 class MetricAnalysisService
 {
+    /**
+     * Analyze a set of metric values and return trend insights.
+     *
+     * @param array $values Daily metric values (numeric).
+     * @param string $metricType Metric type (e.g., 'reaction_time', 'weight').
+     * @return array Highlights and statistics.
+     */
     public function analyzeMetric(array $values, string $metricType): array
     {
         if (empty($values)) {
-            return ['No metrics data available for the specified period.'];
+            return ['highlights' => ['No metrics data available for the specified period.']];
         }
 
         $highlights = [];
         $trend = $this->calculateTrend($values);
+        [$peak, $peakDay] = $this->getPeak($values);
+        [$lowest, $lowestDay] = $this->getLowest($values);
 
-        // Peak and lowest
-        $peak = max($values);
-        $lowest = min($values);
-        $peakDay = array_search($peak, $values) + 1;
-        $lowestDay = array_search($lowest, $values) + 1;
+        $change = $peak - $lowest;
+        $trendDirection = $trend > 0 ? 'increase' : ($trend < 0 ? 'decrease' : 'stable');
 
         switch ($metricType) {
             case 'reaction_time':
-                $highlights[] = "Day {$peakDay} has the slowest reaction time, likely due to fatigue or stress.";
-                $highlights[] = "Reaction time improves over the 7 days, showing consistent adaptation.";
-                if ($peakDay > 4) {
-                    $highlights[] = "Days 5-6 remain stable, indicating a possible plateau.";
+                $highlights[] = "Day {$peakDay} had the slowest reaction time ({$peak} ms), possibly due to fatigue or stress.";
+                $highlights[] = "Day {$lowestDay} had the fastest reaction time ({$lowest} ms).";
+                $highlights[] = $trend > 0
+                    ? "Reaction time worsens over time, indicating rising fatigue or external stressors."
+                    : "Reaction time improves over the period, showing good adaptation.";
+                if (abs($peakDay - $lowestDay) <= 2) {
+                    $highlights[] = "Notable fluctuation occurred in a short window.";
                 }
-                $highlights[] = "The Day {$peakDay} peak ({$peak} ms) vs Day {$lowestDay} low ({$lowest} ms) suggests fatigue, training, or focus impact.";
                 break;
 
             case 'weight':
-                $change = $peak - $lowest;
-                $direction = $trend > 0 ? 'increase' : 'decrease';
-                $highlights[] = "Weight shows a {$direction} of {$change} kg over the period.";
-                $highlights[] = "Highest weight recorded on Day {$peakDay} ({$peak} kg), lowest on Day {$lowestDay} ({$lowest} kg).";
-
+                $highlights[] = "Weight {$trendDirection} of " . abs($change) . " kg observed.";
+                $highlights[] = "Heaviest on Day {$peakDay} ({$peak} kg), lightest on Day {$lowestDay} ({$lowest} kg).";
                 if (abs($change) > 2) {
-                    $highlights[] = "Significant weight fluctuation may indicate hydration shifts or diet/training changes.";
-                }
-                if (abs($peakDay - $lowestDay) <= 2) {
-                    $highlights[] = "Rapid weight shift detected between Day {$lowestDay} and Day {$peakDay}.";
+                    $highlights[] = "Significant fluctuation may reflect changes in hydration, diet, or training.";
                 }
                 break;
 
             case 'max_hr':
-                $highlights[] = "Day {$peakDay} recorded the highest max HR at {$peak} bpm, and Day {$lowestDay} the lowest at {$lowest} bpm.";
+                $highlights[] = "Highest Max HR on Day {$peakDay} ({$peak} bpm), lowest on Day {$lowestDay} ({$lowest} bpm).";
                 $highlights[] = $trend > 0
-                    ? "Max heart rate trend is rising — could suggest higher effort or training intensity."
-                    : "Decreasing max HR trend may indicate fatigue or insufficient recovery.";
-
+                    ? "Increasing trend may indicate higher training intensity or stress."
+                    : "Decreasing trend suggests potential fatigue or better recovery.";
                 if ($peak > 190) {
-                    $highlights[] = "Max HR over 190 bpm may suggest near-max effort or high stress conditions.";
-                }
-                if (($peak - $lowest) > 20) {
-                    $highlights[] = "Large HR variation across days may reflect inconsistent performance or testing variability.";
+                    $highlights[] = "HR above 190 bpm may signal intense effort or stress.";
                 }
                 break;
 
             case 'resting_hr':
-                $highlights[] = "Resting heart rate peaked on Day {$peakDay} at {$peak} bpm, and was lowest on Day {$lowestDay} at {$lowest} bpm.";
+                $highlights[] = "Resting HR peaked at {$peak} bpm (Day {$peakDay}), lowest was {$lowest} bpm (Day {$lowestDay}).";
                 $highlights[] = $trend > 0
-                    ? "An increasing trend may indicate cumulative fatigue or stress."
-                    : "A decreasing trend suggests improving cardiovascular recovery.";
+                    ? "Rising resting HR may indicate poor recovery or stress."
+                    : "Decreasing trend points to improved recovery.";
                 if ($peak > 70) {
-                    $highlights[] = "Resting HR above 70 bpm could be due to stress, poor sleep, or incomplete recovery.";
+                    $highlights[] = "Elevated resting HR might be due to overtraining, illness, or poor sleep.";
                 }
                 break;
 
             case 'hrv':
-                $highlights[] = "HRV highest on Day {$peakDay} ({$peak} ms) and lowest on Day {$lowestDay} ({$lowest} ms).";
+                $highlights[] = "HRV ranged from {$lowest} ms (Day {$lowestDay}) to {$peak} ms (Day {$peakDay}).";
                 $highlights[] = $trend > 0
-                    ? "Positive HRV trend indicates improved recovery and nervous system balance."
-                    : "Decline in HRV may signal stress, illness, or overtraining.";
+                    ? "Increasing HRV trend suggests improved recovery and nervous system balance."
+                    : "Declining HRV could indicate fatigue, stress, or overtraining.";
                 break;
 
             case 'vo2_max':
-                $highlights[] = "VO2 Max peaked at {$peak} ml/kg/min on Day {$peakDay}, lowest on Day {$lowestDay} at {$lowest} ml/kg/min.";
+                $highlights[] = "VO2 Max was highest on Day {$peakDay} ({$peak} ml/kg/min), lowest on Day {$lowestDay} ({$lowest} ml/kg/min).";
                 $highlights[] = $trend > 0
-                    ? "Improvement in VO2 Max suggests better aerobic capacity and endurance."
-                    : "Drop in VO2 Max could reflect fatigue or need for adjusted training.";
+                    ? "VO2 Max improvement implies better aerobic capacity."
+                    : "Decline may indicate fatigue or inadequate training stimulus.";
+                break;
+
+            default:
+                $highlights[] = "Metric type '{$metricType}' is not recognized.";
                 break;
         }
 
         return [
             'highlights' => $highlights,
-            'trend' => $trend,
+            'trend' => round($trend, 4),
             'peak' => [
                 'value' => $peak,
                 'day' => $peakDay
@@ -96,26 +102,59 @@ class MetricAnalysisService
         ];
     }
 
+    /**
+     * Calculate linear trend (slope) from the given values.
+     *
+     * @param array $values
+     * @return float
+     */
     private function calculateTrend(array $values): float
     {
-        if (count($values) < 2) {
-            return 0;
-        }
+        $n = count($values);
+        if ($n < 2) return 0;
 
-        $x = range(1, count($values));
+        $x = range(1, $n);
         $y = array_values($values);
 
-        $meanX = array_sum($x) / count($x);
-        $meanY = array_sum($y) / count($y);
+        $meanX = array_sum($x) / $n;
+        $meanY = array_sum($y) / $n;
 
         $numerator = 0;
         $denominator = 0;
 
-        for ($i = 0; $i < count($values); $i++) {
-            $numerator += ($x[$i] - $meanX) * ($y[$i] - $meanY);
-            $denominator += ($x[$i] - $meanX) * ($x[$i] - $meanX);
+        for ($i = 0; $i < $n; $i++) {
+            $dx = $x[$i] - $meanX;
+            $dy = $y[$i] - $meanY;
+            $numerator += $dx * $dy;
+            $denominator += $dx * $dx;
         }
 
-        return $denominator != 0 ? $numerator / $denominator : 0;
+        return $denominator !== 0 ? $numerator / $denominator : 0;
+    }
+
+    /**
+     * Get the peak value and its day.
+     *
+     * @param array $values
+     * @return array [value, day]
+     */
+    private function getPeak(array $values): array
+    {
+        $peakValue = max($values);
+        $day = array_search($peakValue, $values) + 1;
+        return [$peakValue, $day];
+    }
+
+    /**
+     * Get the lowest value and its day.
+     *
+     * @param array $values
+     * @return array [value, day]
+     */
+    private function getLowest(array $values): array
+    {
+        $lowestValue = min($values);
+        $day = array_search($lowestValue, $values) + 1;
+        return [$lowestValue, $day];
     }
 }
