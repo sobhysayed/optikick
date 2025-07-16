@@ -1,0 +1,7 @@
+/vendor
+.env
+/storage/*.key
+/public/storage
+.vercel
+package.json
+vite.config.js

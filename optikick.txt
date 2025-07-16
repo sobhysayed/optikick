@@ -1,0 +1,19 @@
+Doctor
+
+Arne Slot - Coach
+arneslot@gmail.com  COA001
+arne6640
+
+Doctor
+Jonathan Power    DOC001
+jonathan@gmail.com	jonathan6640
+
+Players
+
+Alisson Becker		Goal Keeper   PLY002
+alisson@gmail.com	alisson6640
+
+
+Luis Diaz	Forward  PLY003
+luisdiaz@gmail.com	luis6640
+
